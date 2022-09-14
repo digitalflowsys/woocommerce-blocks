@@ -78,9 +78,22 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 		$this->query_args = $this->parse_query_args();
 		$products         = array_filter( array_map( 'wc_get_product', $this->get_products() ) );
 
+
+
 		if ( ! $products ) {
 			return '';
 		}
+
+		$cached = [
+			"script_id" => "cached_script",
+			"render_id" => "cached_render",
+		];
+
+
+
+		$cached_script = wp_cache_get($cached["script_id"]);
+		$cached_render = wp_cache_get($cached["render_id"]);
+
 
 		/**
 		 * Override product description to prevent infinite loop.
@@ -100,6 +113,22 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 		 *
 		 * Provides the list of product data (shaped like the Store API responses) and the block name.
 		 */
+
+		if ($cached_script) {
+		    $script = $cached_script;
+		} else {
+			$script = rawurlencode(
+				wp_json_encode(
+					array_map(
+						[ StoreApi::container()->get( SchemaController::class )->get( 'product' ), 'get_item_response' ],
+						$products
+					)
+				)
+			);
+
+			wp_cache_set($cached["script_id"])
+		}
+
 		$this->asset_api->add_inline_script(
 			'wp-hooks',
 			'
@@ -107,16 +136,7 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 				wp.hooks.doAction(
 					"experimental__woocommerce_blocks-product-list-render",
 					{
-						products: JSON.parse( decodeURIComponent( "' . esc_js(
-				rawurlencode(
-					wp_json_encode(
-						array_map(
-							[ StoreApi::container()->get( SchemaController::class )->get( 'product' ), 'get_item_response' ],
-							$products
-						)
-					)
-				)
-			) . '" ) ),
+						products: JSON.parse( decodeURIComponent( "' . esc_js($script) . '" ) ),
 						listName: "' . esc_js( $this->block_name ) . '"
 					}
 				);
@@ -125,11 +145,16 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 			'after'
 		);
 
-		return sprintf(
+		if ($cached_render) return $cached_render;
+
+		$render = sprintf(
 			'<div class="%s"><ul class="wc-block-grid__products">%s</ul></div>',
 			esc_attr( $this->get_container_classes() ),
 			implode( '', array_map( array( $this, 'render_product' ), $products ) )
 		);
+
+		wp_cache_set($cached['render_id'], $render);
+		return $render;
 	}
 
 	/**
