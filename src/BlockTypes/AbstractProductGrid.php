@@ -5,6 +5,17 @@ use Automattic\WooCommerce\Blocks\Utils\BlocksWpQuery;
 use Automattic\WooCommerce\StoreApi\SchemaController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 
+function cache_or_fn($args, $cb) {
+	$cached = wp_cache_get($args);
+	if ($cached) return $cached;
+
+
+	$result = $cb();
+	wp_cache_set($args, $result);
+
+	return $result;
+}
+
 /**
  * AbstractProductGrid class.
  */
@@ -76,23 +87,19 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 		$this->attributes = $this->parse_attributes( $attributes );
 		$this->content    = $content;
 		$this->query_args = $this->parse_query_args();
-		$products         = array_filter( array_map( 'wc_get_product', $this->get_products() ) );
 
+
+		$products = cache_or_fn(
+			json_encode($this->query_args),
+			function(){
+				return array_filter( array_map( 'wc_get_product', $this->get_products() ) );
+			}
+		);
 
 
 		if ( ! $products ) {
 			return '';
 		}
-
-		$cached = [
-			"script_id" => "cached_script",
-			"render_id" => "cached_render",
-		];
-
-
-
-		$cached_script = wp_cache_get($cached["script_id"]);
-		$cached_render = wp_cache_get($cached["render_id"]);
 
 
 		/**
@@ -113,21 +120,21 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 		 *
 		 * Provides the list of product data (shaped like the Store API responses) and the block name.
 		 */
-
-		if ($cached_script) {
-		    $script = $cached_script;
-		} else {
-			$script = rawurlencode(
-				wp_json_encode(
-					array_map(
-						[ StoreApi::container()->get( SchemaController::class )->get( 'product' ), 'get_item_response' ],
-						$products
+		$extended_products = cache_or_fn(
+			"extended:".json_encode($this->query_args),
+			function() {
+				$extended = rawurlencode(
+					wp_json_encode(
+						array_map(
+							[ StoreApi::container()->get( SchemaController::class )->get( 'product' ), 'get_item_response' ],
+							$products
+						)
 					)
-				)
-			);
+				);
+				return $extended;
+			}
+		)
 
-			wp_cache_set($cached["script_id"])
-		}
 
 		$this->asset_api->add_inline_script(
 			'wp-hooks',
@@ -136,7 +143,7 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 				wp.hooks.doAction(
 					"experimental__woocommerce_blocks-product-list-render",
 					{
-						products: JSON.parse( decodeURIComponent( "' . esc_js($script) . '" ) ),
+						products: JSON.parse( decodeURIComponent( "' . esc_js($extended_products) . '" ) ),
 						listName: "' . esc_js( $this->block_name ) . '"
 					}
 				);
@@ -145,16 +152,12 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 			'after'
 		);
 
-		if ($cached_render) return $cached_render;
-
-		$render = sprintf(
+		return sprintf(
 			'<div class="%s"><ul class="wc-block-grid__products">%s</ul></div>',
 			esc_attr( $this->get_container_classes() ),
 			implode( '', array_map( array( $this, 'render_product' ), $products ) )
 		);
 
-		wp_cache_set($cached['render_id'], $render);
-		return $render;
 	}
 
 	/**
