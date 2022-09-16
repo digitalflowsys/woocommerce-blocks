@@ -5,13 +5,13 @@ use Automattic\WooCommerce\Blocks\Utils\BlocksWpQuery;
 use Automattic\WooCommerce\StoreApi\SchemaController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 
+const EXPIRE = 120;
 function cache_or_fn($args, $cb) {
-	$expire = 120;
 	$cached = wp_cache_get($args);
 	if ($cached) return $cached;
 
 	$result = $cb();
-	wp_cache_set($args, $result, $expire);
+	wp_cache_set($args, $result, EXPIRE);
 
 	return $result;
 }
