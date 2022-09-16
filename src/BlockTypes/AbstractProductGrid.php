@@ -89,40 +89,28 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 		$this->query_args = $this->parse_query_args();
 
 
-		$products = cache_or_fn(
-			json_encode($this->query_args),
-			function(){
-				return array_filter( array_map( 'wc_get_product', $this->get_products() ) );
-			}
-		);
+		$current_lang = apply_filters( 'wpml_current_language', NULL );
+		$key = \json_encode(['v3',$this->query_args,$this->attributes,$current_lang]);
 
 
-		if ( ! $products ) {
-			return '';
-		}
 
 
-		/**
-		 * Override product description to prevent infinite loop.
-		 *
-		 * @see https://github.com/woocommerce/woocommerce-blocks/pull/6849
-		 */
-		foreach ( $products as $product ) {
-			$product->set_description( '' );
-		}
-
-		/**
-		 * Product List Render event.
-		 *
-		 * Fires a WP Hook named `experimental__woocommerce_blocks-product-list-render` on render so that the client
-		 * can add event handling when certain products are displayed. This can be used by tracking extensions such
-		 * as Google Analytics to track impressions.
-		 *
-		 * Provides the list of product data (shaped like the Store API responses) and the block name.
-		 */
 		$extended_products = cache_or_fn(
-			"extended:".json_encode($this->query_args),
-			function() {
+			"extended:".$key,
+			function(){
+
+				$products =  array_map(
+					function($product){
+						$product->set_description( '' );
+						return $product;
+					},
+					array_filter( array_map( 'wc_get_product', $this->get_products() ) )
+				);
+
+				if(!$products){
+					return '';
+				}
+
 				$extended = rawurlencode(
 					wp_json_encode(
 						array_map(
@@ -131,10 +119,14 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 						)
 					)
 				);
+
 				return $extended;
 			}
-		)
+		);
 
+		if($extended_products === ''){
+			return '';
+		}
 
 		$this->asset_api->add_inline_script(
 			'wp-hooks',
@@ -152,12 +144,28 @@ abstract class AbstractProductGrid extends AbstractDynamicBlock {
 			'after'
 		);
 
-		return sprintf(
-			'<div class="%s"><ul class="wc-block-grid__products">%s</ul></div>',
-			esc_attr( $this->get_container_classes() ),
-			implode( '', array_map( array( $this, 'render_product' ), $products ) )
+
+
+		$render = cache_or_fn(
+			"render:".$key,
+			function() {
+				$products =  array_map(
+					function($product){
+						$product->set_description( '' );
+						return $product;
+					},
+					array_filter( array_map( 'wc_get_product', $this->get_products() ) )
+				);
+
+				return sprintf(
+					'<div class="%s"><ul class="wc-block-grid__products">%s</ul></div>',
+					esc_attr( $this->get_container_classes() ),
+					implode( '', array_map( array( $this, 'render_product' ), $products ) )
+				);
+			}
 		);
 
+		return $render;
 	}
 
 	/**
