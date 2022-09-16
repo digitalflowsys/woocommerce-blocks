@@ -6,12 +6,12 @@ use Automattic\WooCommerce\StoreApi\SchemaController;
 use Automattic\WooCommerce\StoreApi\StoreApi;
 
 function cache_or_fn($args, $cb) {
+	$expire = 120;
 	$cached = wp_cache_get($args);
 	if ($cached) return $cached;
 
-
 	$result = $cb();
-	wp_cache_set($args, $result);
+	wp_cache_set($args, $result, $expire);
 
 	return $result;
 }
