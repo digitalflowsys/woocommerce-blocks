@@ -60,3 +60,4 @@ blocks.ini
 /eslint_report.json
 /storybook/dist
 .history
+env
