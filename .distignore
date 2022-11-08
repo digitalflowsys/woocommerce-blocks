@@ -8,6 +8,7 @@
 /patches
 /storybook
 /tests
+/env
 
 .editorconfig
 .env
